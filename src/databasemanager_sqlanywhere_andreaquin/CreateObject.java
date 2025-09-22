@@ -79,9 +79,9 @@ public class CreateObject extends javax.swing.JFrame {
         topPanel.add(nameField);
 
         add(topPanel, BorderLayout.NORTH);
-        
-                //ICON
-        ImageIcon icon = new ImageIcon(MainFrame.class.getResource("/resources/Icon.png"));
+
+        //ICON
+        ImageIcon icon = new ImageIcon(main.class.getResource("/resources/Icon.png"));
         this.setIconImage(icon.getImage());
 
         dynamicPanel = new JPanel(new CardLayout());
