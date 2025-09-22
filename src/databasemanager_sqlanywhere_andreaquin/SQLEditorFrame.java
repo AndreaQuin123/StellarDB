@@ -38,7 +38,7 @@ public class SQLEditorFrame extends javax.swing.JFrame {
         loadDatabaseObjects();
 
         //ICON
-        ImageIcon icon = new ImageIcon(MainFrame.class.getResource("/resources/Icon.png"));
+        ImageIcon icon = new ImageIcon(main.class.getResource("/resources/Icon.png"));
         this.setIconImage(icon.getImage());
 
         setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
