@@ -17,6 +17,11 @@ import javax.swing.BorderFactory;
 import javax.swing.JOptionPane;
 import java.awt.Font;
 import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JDialog;
+import javax.swing.JLabel;
+import javax.swing.JPasswordField;
+import javax.swing.JTextField;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
@@ -1032,8 +1037,6 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
             String[] keys = connectionManager.getConnectionKeys();
             if (keys.length == 0) {
                 JOptionPane.showMessageDialog(this, "No existing connections available. Please add a new one.");
-                this.setVisible(false);
-                new MainFrame(connectionManager).setVisible(true);
                 return;
             }
 
@@ -1064,8 +1067,61 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
             }
 
         } else if (choice == 1) {
-            this.setVisible(false);
-            new MainFrame(connectionManager).setVisible(true);
+            
+            JDialog dialog = new JDialog(this, "Add New Connection", true);
+            dialog.setSize(350, 250);
+            dialog.setLocationRelativeTo(null);
+            dialog.setLayout(new java.awt.GridLayout(5, 2, 5, 5));
+
+            JLabel portLabel = new JLabel("Port:");
+            JTextField portField = new JTextField();
+
+            JLabel dbLabel = new JLabel("Database:");
+            JTextField dbField = new JTextField();
+
+            JLabel userLabel = new JLabel("User:");
+            JTextField userField = new JTextField();
+
+            JLabel passLabel = new JLabel("Password:");
+            JPasswordField passField = new JPasswordField();
+
+            JButton okButton = new JButton("Save");
+            JButton cancelButton = new JButton("Cancel");
+
+            dialog.add(portLabel); dialog.add(portField);
+            dialog.add(dbLabel); dialog.add(dbField);
+            dialog.add(userLabel); dialog.add(userField);
+            dialog.add(passLabel); dialog.add(passField);
+            dialog.add(okButton); dialog.add(cancelButton);
+
+            okButton.addActionListener(ev -> {
+                try {
+                    int port = Integer.parseInt(portField.getText().trim());
+                    String db = dbField.getText().trim();
+                    String user = userField.getText().trim();
+                    String pass = new String(passField.getPassword());
+
+                    String key = db + "_" + user;
+                    ConnectionManager.ConnectionInfo info = new ConnectionManager.ConnectionInfo(port, db, user, pass);
+
+                    connectionManager.addConnection(key, info);
+
+                    Connection conn = connectionManager.getActiveConnection();
+                    if (conn != null) {
+                        DBNameLabel.setText(conn.getCatalog());
+                        CurrentUserLabel.setText(conn.getMetaData().getUserName());
+                    }
+
+                    dialog.dispose();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(dialog, "Error: " + ex.getMessage());
+                }
+            });
+
+            cancelButton.addActionListener(ev -> dialog.dispose());
+
+            dialog.setVisible(true);
+            
         }
 
     }//GEN-LAST:event_ChangeConnectionButtonActionPerformed
@@ -1078,7 +1134,6 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
     }//GEN-LAST:event_SQLEditorButtonMouseClicked
 
     private void JTreeObjectsValueChanged(javax.swing.event.TreeSelectionEvent evt) {//GEN-FIRST:event_JTreeObjectsValueChanged
-        // TODO add your handling code here:
     }//GEN-LAST:event_JTreeObjectsValueChanged
 
     private void RefreshButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_RefreshButtonActionPerformed
