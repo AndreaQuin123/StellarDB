@@ -22,12 +22,14 @@ public class ConnectionManager {
     public static class ConnectionInfo {
         int port;
         String database, user, password;
+        boolean type;
 
         ConnectionInfo(int port, String database, String user, String password) {
             this.port = port;
             this.database = database;
             this.user = user;
             this.password = password;
+            this.type = true; //true is SQLANYWHERE, false is POSTGRES
         }
     }
 
@@ -36,6 +38,7 @@ public class ConnectionManager {
     }
 
     public void addConnection(String key, ConnectionInfo info) throws SQLException {
+       if (info.type = true) {
         String url = "jdbc:sqlanywhere:Port=" + info.port + ";DatabaseName=" + info.database;
         Connection conn = DriverManager.getConnection(url, info.user, info.password);
 
@@ -43,6 +46,16 @@ public class ConnectionManager {
         savedConnections.put(key, info);
         activeKey = key;
         saveConnections();
+        
+       } else {
+        String url = "jdbc:postgresql://localhost:" + info.port + "/" + info.database;
+        Connection conn = DriverManager.getConnection(url, info.user, info.password);
+
+        connections.put(key, conn);
+        savedConnections.put(key, info);
+        activeKey = key;
+        saveConnections();
+       }
     }
 
     public Connection getActiveConnection() {
