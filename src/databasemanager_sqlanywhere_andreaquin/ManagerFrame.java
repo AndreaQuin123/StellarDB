@@ -1042,20 +1042,34 @@ SELECT s.sequence_name, u.user_name AS owner_name
                 null, options, options[0]);
 
         if (choice == 0) {
+            
             String[] keys = connectionManager.getConnectionKeys();
             if (keys.length == 0) {
                 JOptionPane.showMessageDialog(this, "No existing connections available. Please add a new one.");
                 return;
             }
+            List<String> sqlanywhereKeys = new ArrayList<>();
+            
+            for (String key : keys) {
+                ConnectionManager.ConnectionInfo info = connectionManager.getSavedConnectionInfo(key);
+                if (info.type == true) { // true = SQLAnywhere
+                    sqlanywhereKeys.add(key);
+                }
+            }
+
+            if (sqlanywhereKeys.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "No SQLAnywhere connections available.");
+                return;
+            }
 
             String selected = (String) JOptionPane.showInputDialog(
                     this,
-                    "Select a connection:",
+                    "Select a SQLAnywhere connection:",
                     "Connections",
                     JOptionPane.PLAIN_MESSAGE,
                     null,
-                    keys,
-                    keys[0]);
+                    sqlanywhereKeys.toArray(new String[0]),
+                    sqlanywhereKeys.get(0));
 
             if (selected != null) {
                 try {
@@ -1160,8 +1174,8 @@ SELECT s.sequence_name, u.user_name AS owner_name
     private void SincronizacionButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_SincronizacionButtonActionPerformed
         //TO-DO
         //SINCRONIZACION
-      
-                String[] options = {"Use existing connection", "Add new connection"};
+
+        String[] options = {"Use existing connection", "Add new connection"};
         int choice = JOptionPane.showOptionDialog(this,
                 "Do you want to use an existing connection or add a new one?",
                 "Change Connection",
@@ -1171,7 +1185,7 @@ SELECT s.sequence_name, u.user_name AS owner_name
 
         if (choice == 0) {
             String[] keys = connectionManager.getConnectionKeys();
-            List<String> postgresKeys = new ArrayList<>(); 
+            List<String> postgresKeys = new ArrayList<>();
             for (String key : keys) {
                 ConnectionManager.ConnectionInfo info = connectionManager.getSavedConnectionInfo(key);
                 if (info != null && !info.type) { // false = Postgres
@@ -1196,8 +1210,8 @@ SELECT s.sequence_name, u.user_name AS owner_name
 
             if (selected != null) {
                 //sincronizar
-            } 
-            
+            }
+
         } else if (choice == 1) {
             JDialog dialog = new JDialog(this, "Add New Connection to Postgres", true);
             dialog.setSize(350, 250);
@@ -1232,21 +1246,19 @@ SELECT s.sequence_name, u.user_name AS owner_name
 
             okButton.addActionListener(ev -> {
                 try {
-
-                    //adds it to the connection manager
                     int port = Integer.parseInt(portField.getText().trim());
                     String db = dbField.getText().trim();
                     String user = userField.getText().trim();
                     String pass = new String(passField.getPassword());
 
                     String key = db + "_" + user;
+
                     ConnectionManager.ConnectionInfo info = new ConnectionManager.ConnectionInfo(port, db, user, pass);
-                    info.type = false;
+                    info.type = false; // false = Postgres
 
                     connectionManager.addConnection(key, info);
 
-                    //synchronizes
-
+                    JOptionPane.showMessageDialog(dialog, "Postgres connection added successfully!");
                     dialog.dispose();
 
                 } catch (Exception ex) {
