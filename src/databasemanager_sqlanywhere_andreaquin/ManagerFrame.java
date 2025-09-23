@@ -16,13 +16,14 @@ import java.sql.ResultSetMetaData;
 import javax.swing.BorderFactory;
 import javax.swing.JOptionPane;
 import java.awt.Font;
+import java.util.List;
+import java.util.ArrayList;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextField;
-import javax.swing.table.DefaultTableModel;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 
@@ -61,10 +62,11 @@ public class ManagerFrame extends javax.swing.JFrame {
 
     private ConnectionManager connectionManager;
 
-    public ManagerFrame(ConnectionManager connectionManager) throws SQLException {this.connectionManager = connectionManager;
+    public ManagerFrame(ConnectionManager connectionManager) throws SQLException {
+        this.connectionManager = connectionManager;
 
         initComponents();
-        
+
         //cambia a no tener una conexion activa
         if (connectionManager.hasActiveConnection()) {
             Connection conn = connectionManager.getActiveConnection();
@@ -75,7 +77,7 @@ public class ManagerFrame extends javax.swing.JFrame {
             DBNameLabel.setText("Not connected");
             CurrentUserLabel.setText("Not connected");
         }
-        
+
         setTitle("StellarDB - Database Manager");
         setDefaultCloseOperation(ManagerFrame.EXIT_ON_CLOSE);
         setSize(1200, 700);
@@ -85,7 +87,7 @@ public class ManagerFrame extends javax.swing.JFrame {
         ImageIcon icon = new ImageIcon(ManagerFrame.class.getResource("/resources/Icon.png"));
         this.setIconImage(icon.getImage());
 
-       //detalles del objeto, textarea
+        //detalles del objeto, textarea
         ObjectDetails.setEditable(false);
         ObjectDetails.setFont(new Font("Consolas", Font.PLAIN, 14));
         ObjectDetails.setBorder(
@@ -97,7 +99,7 @@ public class ManagerFrame extends javax.swing.JFrame {
         ObjectDetails.setVisible(false);
 
         //arbol
-        DefaultMutableTreeNode root = new DefaultMutableTreeNode("Database Objects");
+        DefaultMutableTreeNode root = new DefaultMutableTreeNode("* * * NO DATABASE CONNECTED * * *");
         JTreeObjects.setModel(new DefaultTreeModel(root));
         loadDatabaseObjects();
 
@@ -246,7 +248,7 @@ public class ManagerFrame extends javax.swing.JFrame {
                             String eventCode = rs.getString("event");
                             String tableName = rs.getString("table_name");
                             String triggerBody = rs.getString("source");
-                            
+
                             String triggerTime = switch (triggerTimeCode) {
                                 case "A" ->
                                     "AFTER";
@@ -496,15 +498,13 @@ SELECT s.sequence_name, u.user_name AS owner_name
                 String userName = rs.getString("user_name");
                 usersNode.add(new DefaultMutableTreeNode(new ObjectTree(userName, "USER")));
             }
-            
-            
+
             rs = st.executeQuery("SELECT dbspace_name FROM sysdbspace");
-            
-                while (rs.next()) {
-                    String dbspaceName = rs.getString("dbspace_name");
-                    tablespacesNode.add(new DefaultMutableTreeNode(new ObjectTree(dbspaceName, "TABLESPACE")));
-                }
-                
+
+            while (rs.next()) {
+                String dbspaceName = rs.getString("dbspace_name");
+                tablespacesNode.add(new DefaultMutableTreeNode(new ObjectTree(dbspaceName, "TABLESPACE")));
+            }
 
         } catch (SQLException ex) {
             JOptionPane.showMessageDialog(this, "Error loading objects: " + ex.getMessage());
@@ -520,7 +520,6 @@ SELECT s.sequence_name, u.user_name AS owner_name
         root.add(functionsNode);
         root.add(usersNode);
         root.add(tablespacesNode);
-
 
         JTreeObjects.setModel(new DefaultTreeModel(root));
         JTreeObjects.expandRow(0);
@@ -566,37 +565,37 @@ SELECT s.sequence_name, u.user_name AS owner_name
         return sb.toString();
     }
 
-private String showTablespaces(Connection conn) {
-    StringBuilder sb = new StringBuilder();
-    sb.append("📦 Tablespaces\n\n");
+    private String showTablespaces(Connection conn) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("📦 Tablespaces\n\n");
 
-    String sql = "SELECT dbspace_id, dbspace_name, object_id FROM sysdbspace";
-    try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+        String sql = "SELECT dbspace_id, dbspace_name, object_id FROM sysdbspace";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
 
-        // Header
-        sb.append(String.format("%-10s%-30s%-15s\n", "ID", "Name", "Object ID"));
-        sb.append("-".repeat(55)).append("\n");
+            // Header
+            sb.append(String.format("%-10s%-30s%-15s\n", "ID", "Name", "Object ID"));
+            sb.append("-".repeat(55)).append("\n");
 
-        int count = 0;
-        while (rs.next()) {
-            sb.append(String.format("%-10d%-30s%-15d\n",
-                    rs.getInt("dbspace_id"),
-                    rs.getString("dbspace_name").trim(),
-                    rs.getLong("object_id")
-            ));
-            count++;
+            int count = 0;
+            while (rs.next()) {
+                sb.append(String.format("%-10d%-30s%-15d\n",
+                        rs.getInt("dbspace_id"),
+                        rs.getString("dbspace_name").trim(),
+                        rs.getLong("object_id")
+                ));
+                count++;
+            }
+
+            if (count == 0) {
+                sb.append("❌ No tablespaces found.\n");
+            }
+
+        } catch (SQLException ex) {
+            sb.append("❌ Error loading tablespaces: ").append(ex.getMessage()).append("\n");
         }
 
-        if (count == 0) {
-            sb.append("❌ No tablespaces found.\n");
-        }
-
-    } catch (SQLException ex) {
-        sb.append("❌ Error loading tablespaces: ").append(ex.getMessage()).append("\n");
+        return sb.toString();
     }
-
-    return sb.toString();
-}
 
     private void showObjectDetails(String objectName, String objectType) throws SQLException {
         ObjectDetails.setText("");
@@ -654,67 +653,64 @@ private String showTablespaces(Connection conn) {
     }
 
     // =============== MUESTRA DETALLES DE LOS OBJETOS
- private String getIndexDetails(Connection conn, String tableName) throws SQLException {
-    StringBuilder sb = new StringBuilder();
-    
-    String sql = 
-        "SELECT i.index_name, i.\"unique\", i.index_category, " +
-        "       c.sequence, col.column_name, c.\"order\" " +
-        "FROM sysidx i " +
-        "JOIN sysidxcol c ON i.table_id = c.table_id AND i.index_id = c.index_id " +
-        "JOIN syscolumn col ON c.table_id = col.table_id AND c.column_id = col.column_id " +
-        "WHERE i.table_id = (SELECT table_id FROM systab WHERE table_name = ?) " +
-        "ORDER BY i.index_name, c.sequence";
+    private String getIndexDetails(Connection conn, String tableName) throws SQLException {
+        StringBuilder sb = new StringBuilder();
 
-    try (PreparedStatement ps = conn.prepareStatement(sql)) {
-        ps.setString(1, tableName);
-        try (ResultSet rs = ps.executeQuery()) {
-            String currentIndex = "";
-            while (rs.next()) {
-                String indexName = rs.getString("index_name");
-                if (!indexName.equals(currentIndex)) {
-                    if (!currentIndex.isEmpty()) {
-                        sb.append("\n");
+        String sql
+                = "SELECT i.index_name, i.\"unique\", i.index_category, "
+                + "       c.sequence, col.column_name, c.\"order\" "
+                + "FROM sysidx i "
+                + "JOIN sysidxcol c ON i.table_id = c.table_id AND i.index_id = c.index_id "
+                + "JOIN syscolumn col ON c.table_id = col.table_id AND c.column_id = col.column_id "
+                + "WHERE i.table_id = (SELECT table_id FROM systab WHERE table_name = ?) "
+                + "ORDER BY i.index_name, c.sequence";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, tableName);
+            try (ResultSet rs = ps.executeQuery()) {
+                String currentIndex = "";
+                while (rs.next()) {
+                    String indexName = rs.getString("index_name");
+                    if (!indexName.equals(currentIndex)) {
+                        if (!currentIndex.isEmpty()) {
+                            sb.append("\n");
+                        }
+                        sb.append("Index: ").append(indexName).append("\n");
+                        sb.append("Unique: ").append(rs.getInt("unique") == 1 ? "Yes" : "No").append("\n");
+                        sb.append("Category: ").append(rs.getInt("index_category")).append("\n");
+                        sb.append("Columns:\n");
+                        currentIndex = indexName;
                     }
-                    sb.append("Index: ").append(indexName).append("\n");
-                    sb.append("Unique: ").append(rs.getInt("unique") == 1 ? "Yes" : "No").append("\n");
-                    sb.append("Category: ").append(rs.getInt("index_category")).append("\n");
-                    sb.append("Columns:\n");
-                    currentIndex = indexName;
+                    sb.append("  - ").append(rs.getString("column_name"))
+                            .append(" (Order: ").append(rs.getString("order")).append(")\n");
                 }
-                sb.append("  - ").append(rs.getString("column_name"))
-                  .append(" (Order: ").append(rs.getString("order")).append(")\n");
             }
         }
+
+        return sb.toString();
     }
 
-    return sb.toString();
-}
-
-   
     private String getFunctionDetails(Connection conn, String functionName) throws SQLException {
-    StringBuilder sb = new StringBuilder();
-    String sql = "SELECT proc_name, proc_defn, remarks, source FROM sysprocedure WHERE proc_name = ?";
+        StringBuilder sb = new StringBuilder();
+        String sql = "SELECT proc_name, proc_defn, remarks, source FROM sysprocedure WHERE proc_name = ?";
 
-    try (PreparedStatement ps = conn.prepareStatement(sql)) {
-        ps.setString(1, functionName);
-        try (ResultSet rs = ps.executeQuery()) {
-            if (rs.next()) {
-                sb.append("Name: ").append(rs.getString("proc_name")).append("\n");
-                sb.append("Definition:\n").append(rs.getString("proc_defn")).append("\n\n");
-                sb.append("Remarks:\n").append(rs.getString("remarks")).append("\n");
-                sb.append("Source:\n").append(rs.getString("source")).append("\n");
-            } else {
-                sb.append("❌ Function not found.");
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, functionName);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    sb.append("Name: ").append(rs.getString("proc_name")).append("\n");
+                    sb.append("Definition:\n").append(rs.getString("proc_defn")).append("\n\n");
+                    sb.append("Remarks:\n").append(rs.getString("remarks")).append("\n");
+                    sb.append("Source:\n").append(rs.getString("source")).append("\n");
+                } else {
+                    sb.append("❌ Function not found.");
+                }
             }
         }
+
+        return sb.toString();
     }
 
-    return sb.toString();
-}
-
- 
- 
     private String getViewDetails(Connection conn, String viewName) throws SQLException {
         StringBuilder sb = new StringBuilder();
         String sql
@@ -756,32 +752,31 @@ private String showTablespaces(Connection conn) {
         return sb.toString();
     }
 
-private String getProcedureDetails(Connection conn, String procedureName) throws SQLException {
-    StringBuilder sb = new StringBuilder();
-    String sql
-            = "SELECT proc_name, proc_defn "
-            + "FROM sysprocedure "
-            + "WHERE proc_name = ?";
+    private String getProcedureDetails(Connection conn, String procedureName) throws SQLException {
+        StringBuilder sb = new StringBuilder();
+        String sql
+                = "SELECT proc_name, proc_defn "
+                + "FROM sysprocedure "
+                + "WHERE proc_name = ?";
 
-    try (PreparedStatement ps = conn.prepareStatement(sql)) {
-        ps.setString(1, procedureName);
-        try (ResultSet rs = ps.executeQuery()) {
-            if (rs.next()) {
-                sb.append("Name: ").append(rs.getString("proc_name")).append("\n");
-                sb.append("Definition:\n").append(rs.getString("proc_defn")).append("\n");
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, procedureName);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    sb.append("Name: ").append(rs.getString("proc_name")).append("\n");
+                    sb.append("Definition:\n").append(rs.getString("proc_defn")).append("\n");
+                }
             }
         }
+        return sb.toString();
     }
-    return sb.toString();
-}
-
 
     private String getTriggerDetails(Connection conn, String triggerName) throws SQLException {
         StringBuilder sb = new StringBuilder();
         String sql = "SELECT t.trigger_name, s.table_name, t.event, t.trigger_time, t.source "
-                   + "FROM systrigger t "
-                   + "JOIN systab s ON t.table_id = s.table_id "
-                   + "WHERE t.trigger_name = ?";
+                + "FROM systrigger t "
+                + "JOIN systab s ON t.table_id = s.table_id "
+                + "WHERE t.trigger_name = ?";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, triggerName);
@@ -789,31 +784,45 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
                 if (rs.next()) {
                     sb.append("Trigger on table: ").append(rs.getString("table_name")).append("\n");
 
-                    // Map event code to human-readable
                     String eventCode = rs.getString("event");
                     String eventDesc = switch (eventCode) {
-                        case "A" -> "INSERT, DELETE";
-                        case "B" -> "INSERT, UPDATE";
-                        case "C" -> "UPDATE COLUMNS";
-                        case "D" -> "DELETE";
-                        case "E" -> "DELETE, UPDATE";
-                        case "I" -> "INSERT";
-                        case "U" -> "UPDATE";
-                        case "M" -> "INSERT, DELETE, UPDATE";
-                        default -> eventCode;
+                        case "A" ->
+                            "INSERT, DELETE";
+                        case "B" ->
+                            "INSERT, UPDATE";
+                        case "C" ->
+                            "UPDATE COLUMNS";
+                        case "D" ->
+                            "DELETE";
+                        case "E" ->
+                            "DELETE, UPDATE";
+                        case "I" ->
+                            "INSERT";
+                        case "U" ->
+                            "UPDATE";
+                        case "M" ->
+                            "INSERT, DELETE, UPDATE";
+                        default ->
+                            eventCode;
                     };
                     sb.append("Event: ").append(eventDesc).append("\n");
 
-                    // Map trigger_time code
                     String timeCode = rs.getString("trigger_time");
                     String timeDesc = switch (timeCode) {
-                        case "A" -> "AFTER (row-level)";
-                        case "B" -> "BEFORE (row-level)";
-                        case "I" -> "INSTEAD OF (row-level)";
-                        case "K" -> "INSTEAD OF (statement-level)";
-                        case "R" -> "RESOLVE";
-                        case "S" -> "AFTER (statement-level)";
-                        default -> timeCode;
+                        case "A" ->
+                            "AFTER (row-level)";
+                        case "B" ->
+                            "BEFORE (row-level)";
+                        case "I" ->
+                            "INSTEAD OF (row-level)";
+                        case "K" ->
+                            "INSTEAD OF (statement-level)";
+                        case "R" ->
+                            "RESOLVE";
+                        case "S" ->
+                            "AFTER (statement-level)";
+                        default ->
+                            timeCode;
                     };
                     sb.append("Trigger Time: ").append(timeDesc).append("\n");
 
@@ -823,7 +832,6 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
         }
         return sb.toString();
     }
-
 
     /**
      * This method is called from within the constructor to initialize the form.
@@ -842,14 +850,14 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
         SQLEditorButton = new javax.swing.JButton();
         CreateObjectButton = new javax.swing.JButton();
         ShowDDLButton = new javax.swing.JButton();
-        RefreshButton = new javax.swing.JButton();
+        SincronizacionButton = new javax.swing.JButton();
         DisconnectButton = new javax.swing.JButton();
         ChangeConnectionButton = new javax.swing.JButton();
+        ConnectionLabel1 = new javax.swing.JLabel();
         ConnectionLabel = new javax.swing.JLabel();
         DBNameLabel = new javax.swing.JLabel();
         CurrentUserLabel = new javax.swing.JLabel();
         Background = new javax.swing.JLabel();
-        ConnectionLabel1 = new javax.swing.JLabel();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
         setBackground(new java.awt.Color(183, 197, 211));
@@ -929,21 +937,21 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
         jPanel1.add(ShowDDLButton);
         ShowDDLButton.setBounds(680, 450, 120, 90);
 
-        RefreshButton.setBorderPainted(false);
-        RefreshButton.setContentAreaFilled(false);
-        RefreshButton.setCursor(new java.awt.Cursor(java.awt.Cursor.HAND_CURSOR));
-        RefreshButton.addMouseListener(new java.awt.event.MouseAdapter() {
+        SincronizacionButton.setBorderPainted(false);
+        SincronizacionButton.setContentAreaFilled(false);
+        SincronizacionButton.setCursor(new java.awt.Cursor(java.awt.Cursor.HAND_CURSOR));
+        SincronizacionButton.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseClicked(java.awt.event.MouseEvent evt) {
-                RefreshButtonMouseClicked(evt);
+                SincronizacionButtonMouseClicked(evt);
             }
         });
-        RefreshButton.addActionListener(new java.awt.event.ActionListener() {
+        SincronizacionButton.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
-                RefreshButtonActionPerformed(evt);
+                SincronizacionButtonActionPerformed(evt);
             }
         });
-        jPanel1.add(RefreshButton);
-        RefreshButton.setBounds(680, 550, 120, 60);
+        jPanel1.add(SincronizacionButton);
+        SincronizacionButton.setBounds(690, 550, 110, 80);
 
         DisconnectButton.setAutoscrolls(true);
         DisconnectButton.setBorderPainted(false);
@@ -968,12 +976,19 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
         jPanel1.add(ChangeConnectionButton);
         ChangeConnectionButton.setBounds(810, 440, 130, 100);
 
+        ConnectionLabel1.setBackground(new java.awt.Color(255, 255, 255));
+        ConnectionLabel1.setForeground(new java.awt.Color(0, 0, 0));
+        ConnectionLabel1.setText("SINCRONIZACION");
+        ConnectionLabel1.setOpaque(true);
+        jPanel1.add(ConnectionLabel1);
+        ConnectionLabel1.setBounds(690, 620, 120, 16);
+
         ConnectionLabel.setBackground(new java.awt.Color(255, 255, 255));
         ConnectionLabel.setForeground(new java.awt.Color(0, 0, 0));
         ConnectionLabel.setText("   CONNECT / CHANGE");
         ConnectionLabel.setOpaque(true);
         jPanel1.add(ConnectionLabel);
-        ConnectionLabel.setBounds(810, 520, 130, 16);
+        ConnectionLabel.setBounds(800, 520, 150, 16);
 
         DBNameLabel.setFont(new java.awt.Font("Segoe UI", 1, 14)); // NOI18N
         DBNameLabel.setForeground(new java.awt.Color(0, 0, 0));
@@ -990,13 +1005,6 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
         Background.setIcon(new javax.swing.ImageIcon(getClass().getResource("/resources/ManagerFrame.png"))); // NOI18N
         jPanel1.add(Background);
         Background.setBounds(0, 0, 1200, 670);
-
-        ConnectionLabel1.setBackground(new java.awt.Color(255, 255, 255));
-        ConnectionLabel1.setForeground(new java.awt.Color(0, 0, 0));
-        ConnectionLabel1.setText("   CONNECT / CHANGE");
-        ConnectionLabel1.setOpaque(true);
-        jPanel1.add(ConnectionLabel1);
-        ConnectionLabel1.setBounds(810, 520, 130, 16);
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
@@ -1020,8 +1028,8 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
         // TODO add your handling code here:
     }//GEN-LAST:event_CreateObjectButtonActionPerformed
 
-    private void RefreshButtonMouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_RefreshButtonMouseClicked
-    }//GEN-LAST:event_RefreshButtonMouseClicked
+    private void SincronizacionButtonMouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_SincronizacionButtonMouseClicked
+    }//GEN-LAST:event_SincronizacionButtonMouseClicked
 
 
     private void ChangeConnectionButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_ChangeConnectionButtonActionPerformed
@@ -1061,13 +1069,17 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
                 try {
                     DBNameLabel.setText(conn.getCatalog());  // database name
                     CurrentUserLabel.setText(conn.getMetaData().getUserName()); // current user
+
+                    loadDatabaseObjects();
+                    JTreeObjects.revalidate();
+                    JTreeObjects.repaint();
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
             }
 
         } else if (choice == 1) {
-            
+
             JDialog dialog = new JDialog(this, "Add New Connection", true);
             dialog.setSize(350, 250);
             dialog.setLocationRelativeTo(null);
@@ -1088,11 +1100,16 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
             JButton okButton = new JButton("Save");
             JButton cancelButton = new JButton("Cancel");
 
-            dialog.add(portLabel); dialog.add(portField);
-            dialog.add(dbLabel); dialog.add(dbField);
-            dialog.add(userLabel); dialog.add(userField);
-            dialog.add(passLabel); dialog.add(passField);
-            dialog.add(okButton); dialog.add(cancelButton);
+            dialog.add(portLabel);
+            dialog.add(portField);
+            dialog.add(dbLabel);
+            dialog.add(dbField);
+            dialog.add(userLabel);
+            dialog.add(userField);
+            dialog.add(passLabel);
+            dialog.add(passField);
+            dialog.add(okButton);
+            dialog.add(cancelButton);
 
             okButton.addActionListener(ev -> {
                 try {
@@ -1110,6 +1127,10 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
                     if (conn != null) {
                         DBNameLabel.setText(conn.getCatalog());
                         CurrentUserLabel.setText(conn.getMetaData().getUserName());
+
+                        loadDatabaseObjects();
+                        JTreeObjects.revalidate();
+                        JTreeObjects.repaint();
                     }
 
                     dialog.dispose();
@@ -1121,7 +1142,7 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
             cancelButton.addActionListener(ev -> dialog.dispose());
 
             dialog.setVisible(true);
-            
+
         }
 
     }//GEN-LAST:event_ChangeConnectionButtonActionPerformed
@@ -1136,11 +1157,108 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
     private void JTreeObjectsValueChanged(javax.swing.event.TreeSelectionEvent evt) {//GEN-FIRST:event_JTreeObjectsValueChanged
     }//GEN-LAST:event_JTreeObjectsValueChanged
 
-    private void RefreshButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_RefreshButtonActionPerformed
-        loadDatabaseObjects();
-        JTreeObjects.revalidate();
-        JTreeObjects.repaint();
-    }//GEN-LAST:event_RefreshButtonActionPerformed
+    private void SincronizacionButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_SincronizacionButtonActionPerformed
+        //TO-DO
+        //SINCRONIZACION
+      
+                String[] options = {"Use existing connection", "Add new connection"};
+        int choice = JOptionPane.showOptionDialog(this,
+                "Do you want to use an existing connection or add a new one?",
+                "Change Connection",
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null, options, options[0]);
+
+        if (choice == 0) {
+            String[] keys = connectionManager.getConnectionKeys();
+            List<String> postgresKeys = new ArrayList<>(); 
+            for (String key : keys) {
+                ConnectionManager.ConnectionInfo info = connectionManager.getSavedConnectionInfo(key);
+                if (info != null && !info.type) { // false = Postgres
+                    postgresKeys.add(key);
+                }
+            }
+
+            if (postgresKeys.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "No Postgres connections available. Please add a new one.");
+                return;
+            }
+
+            String selected = (String) JOptionPane.showInputDialog(
+                    this,
+                    "Select a Postgres connection:",
+                    "Connections",
+                    JOptionPane.PLAIN_MESSAGE,
+                    null,
+                    postgresKeys.toArray(new String[0]),
+                    postgresKeys.get(0)
+            );
+
+            if (selected != null) {
+                //sincronizar
+            } 
+            
+        } else if (choice == 1) {
+            JDialog dialog = new JDialog(this, "Add New Connection to Postgres", true);
+            dialog.setSize(350, 250);
+            dialog.setLocationRelativeTo(null);
+            dialog.setLayout(new java.awt.GridLayout(5, 2, 5, 5));
+
+            JLabel portLabel = new JLabel("Port:");
+            JTextField portField = new JTextField();
+
+            JLabel dbLabel = new JLabel("Database:");
+            JTextField dbField = new JTextField();
+
+            JLabel userLabel = new JLabel("User:");
+            JTextField userField = new JTextField();
+
+            JLabel passLabel = new JLabel("Password:");
+            JPasswordField passField = new JPasswordField();
+
+            JButton okButton = new JButton("Save");
+            JButton cancelButton = new JButton("Cancel");
+
+            dialog.add(portLabel);
+            dialog.add(portField);
+            dialog.add(dbLabel);
+            dialog.add(dbField);
+            dialog.add(userLabel);
+            dialog.add(userField);
+            dialog.add(passLabel);
+            dialog.add(passField);
+            dialog.add(okButton);
+            dialog.add(cancelButton);
+
+            okButton.addActionListener(ev -> {
+                try {
+
+                    //adds it to the connection manager
+                    int port = Integer.parseInt(portField.getText().trim());
+                    String db = dbField.getText().trim();
+                    String user = userField.getText().trim();
+                    String pass = new String(passField.getPassword());
+
+                    String key = db + "_" + user;
+                    ConnectionManager.ConnectionInfo info = new ConnectionManager.ConnectionInfo(port, db, user, pass);
+                    info.type = false;
+
+                    connectionManager.addConnection(key, info);
+
+                    //synchronizes
+
+                    dialog.dispose();
+
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(dialog, "Error: " + ex.getMessage());
+                }
+            });
+
+            cancelButton.addActionListener(ev -> dialog.dispose());
+
+            dialog.setVisible(true);
+        }
+    }//GEN-LAST:event_SincronizacionButtonActionPerformed
 
     private void DisconnectButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_DisconnectButtonActionPerformed
         if (!connectionManager.hasActiveConnection()) {
@@ -1213,9 +1331,9 @@ private String getProcedureDetails(Connection conn, String procedureName) throws
     private javax.swing.JButton DisconnectButton;
     private javax.swing.JTree JTreeObjects;
     private javax.swing.JTextArea ObjectDetails;
-    private javax.swing.JButton RefreshButton;
     private javax.swing.JButton SQLEditorButton;
     private javax.swing.JButton ShowDDLButton;
+    private javax.swing.JButton SincronizacionButton;
     private javax.swing.JPanel jPanel1;
     private javax.swing.JScrollPane jScrollPane1;
     private javax.swing.JScrollPane jScrollPane2;
