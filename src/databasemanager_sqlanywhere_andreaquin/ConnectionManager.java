@@ -9,7 +9,6 @@ import java.io.*;
 
 //json
 import org.json.simple.JSONObject;
-import org.json.simple.JSONArray;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 import java.io.FileReader;
@@ -170,6 +169,17 @@ public class ConnectionManager {
         } catch (IOException | ParseException e) {
             e.printStackTrace();
         }
+    }
+
+    public Connection getConnection(String key) throws SQLException {
+        if (!savedConnections.containsKey(key)) {
+            throw new IllegalArgumentException("Connection not found: " + key);
+        }
+        if (!connections.containsKey(key)) {
+            ConnectionInfo info = savedConnections.get(key);
+            addConnection(key, info);
+        }
+        return connections.get(key);
     }
 
 }
