@@ -1042,14 +1042,14 @@ SELECT s.sequence_name, u.user_name AS owner_name
                 null, options, options[0]);
 
         if (choice == 0) {
-            
+
             String[] keys = connectionManager.getConnectionKeys();
             if (keys.length == 0) {
                 JOptionPane.showMessageDialog(this, "No existing connections available. Please add a new one.");
                 return;
             }
             List<String> sqlanywhereKeys = new ArrayList<>();
-            
+
             for (String key : keys) {
                 ConnectionManager.ConnectionInfo info = connectionManager.getSavedConnectionInfo(key);
                 if (info.type == true) { // true = SQLAnywhere
@@ -1171,6 +1171,62 @@ SELECT s.sequence_name, u.user_name AS owner_name
     private void JTreeObjectsValueChanged(javax.swing.event.TreeSelectionEvent evt) {//GEN-FIRST:event_JTreeObjectsValueChanged
     }//GEN-LAST:event_JTreeObjectsValueChanged
 
+    public void migrateTable(Connection sqlConn, Connection postgresConn, String tableName) {
+        try {
+            // 1. utiliza el objectddl metodo que ya tenia
+            String ddl = getObjectDDL(sqlConn, tableName, "TABLE");
+            if (ddl == null || ddl.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "ERROR: Could not get DDL for table: " + tableName);
+                return;
+            }
+
+            // 2. crea la tabla si no existe
+            try (Statement destStmt = postgresConn.createStatement()) {
+                destStmt.execute(ddl);
+                System.out.println("tabla creada: " + tableName);
+            } catch (SQLException e) {
+                System.out.println(e.getMessage());
+            }
+
+            // 3. query para leer todos los rows
+            String selectQuery = "SELECT * FROM " + tableName;
+            try (Statement srcStmt = sqlConn.createStatement(); ResultSet rs = srcStmt.executeQuery(selectQuery)) {
+
+                ResultSetMetaData meta = rs.getMetaData();
+                int columnCount = meta.getColumnCount();
+
+                // 4. insert a cada statement
+                StringBuilder insertSQL = new StringBuilder("INSERT INTO " + tableName + " VALUES (");
+                for (int i = 1; i <= columnCount; i++) {
+                    insertSQL.append("?");
+                    if (i < columnCount) {
+                        insertSQL.append(", ");
+                    }
+                }
+                insertSQL.append(")");
+
+                try (PreparedStatement destInsert = postgresConn.prepareStatement(insertSQL.toString())) {
+                    int rowCount = 0;
+
+                    while (rs.next()) {
+                        for (int i = 1; i <= columnCount; i++) {
+                            destInsert.setObject(i, rs.getObject(i));
+                        }
+                        destInsert.executeUpdate();
+                        rowCount++;
+                    }
+
+                    JOptionPane.showMessageDialog(this, "Migrated " + rowCount + " rows from table: " + tableName);
+                }
+            }
+
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error migrating table: " + ex.getMessage());
+        }
+    }
+
+
     private void SincronizacionButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_SincronizacionButtonActionPerformed
         //TO-DO
         //SINCRONIZACION
@@ -1209,7 +1265,25 @@ SELECT s.sequence_name, u.user_name AS owner_name
             );
 
             if (selected != null) {
-                //sincronizar
+
+                try {
+                    Connection sqlanywhereConn = connectionManager.getActiveConnection();
+                    Connection postgresConn = connectionManager.getConnection(selected);
+
+                    if (postgresConn == null) {
+                        JOptionPane.showMessageDialog(this, "The selected Postgres connection is not active.");
+                        return;
+                    }
+
+                    migrateTable(sqlanywhereConn, postgresConn, "clientes");
+
+                    JOptionPane.showMessageDialog(this, "Synchronization completed successfully.");
+
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    JOptionPane.showMessageDialog(this, "Error during synchronization: " + ex.getMessage());
+                }
+
             }
 
         } else if (choice == 1) {
