@@ -7,6 +7,15 @@ import java.util.HashMap;
 import java.util.Map;
 import java.io.*;
 
+//json
+import org.json.simple.JSONObject;
+import org.json.simple.JSONArray;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+
 public class ConnectionManager {
 
     private Map<String, Connection> connections = new HashMap<>();
@@ -20,6 +29,7 @@ public class ConnectionManager {
     }
 
     public static class ConnectionInfo {
+
         int port;
         String database, user, password;
         boolean type;
@@ -38,24 +48,22 @@ public class ConnectionManager {
     }
 
     public void addConnection(String key, ConnectionInfo info) throws SQLException {
-       if (info.type = true) {
-        String url = "jdbc:sqlanywhere:Port=" + info.port + ";DatabaseName=" + info.database;
-        Connection conn = DriverManager.getConnection(url, info.user, info.password);
+        if (info.type) { // SQL Anywhere
+            String url = "jdbc:sqlanywhere:Port=" + info.port + ";DatabaseName=" + info.database;
+            Connection conn = DriverManager.getConnection(url, info.user, info.password);
+            connections.put(key, conn);
 
-        connections.put(key, conn);
-        savedConnections.put(key, info);
-        activeKey = key;
-        saveConnections();
-        
-       } else {
-        String url = "jdbc:postgresql://localhost:" + info.port + "/" + info.database;
-        Connection conn = DriverManager.getConnection(url, info.user, info.password);
+            activeKey = key;
 
-        connections.put(key, conn);
+        } else { // Postgres
+            String url = "jdbc:postgresql://localhost:" + info.port + "/" + info.database;
+            Connection conn = DriverManager.getConnection(url, info.user, info.password);
+            connections.put(key, conn);
+        }
+
         savedConnections.put(key, info);
-        activeKey = key;
+
         saveConnections();
-       }
     }
 
     public Connection getActiveConnection() {
@@ -89,10 +97,14 @@ public class ConnectionManager {
     }
 
     public void disconnectActiveConnection() {
-        if (activeKey == null) return;
+        if (activeKey == null) {
+            return;
+        }
         try {
             Connection conn = connections.get(activeKey);
-            if (conn != null && !conn.isClosed()) conn.close();
+            if (conn != null && !conn.isClosed()) {
+                conn.close();
+            }
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -102,77 +114,62 @@ public class ConnectionManager {
     }
 
     private void saveConnections() {
-        try (PrintWriter pw = new PrintWriter(file)) {
-            pw.println("{");
-            pw.println("  \"connections\": {");
-            int count = 0;
-            for (Map.Entry<String, ConnectionInfo> e : savedConnections.entrySet()) {
-                ConnectionInfo c = e.getValue();
-                pw.printf("    \"%s\": {\"port\":%d,\"database\":\"%s\",\"user\":\"%s\",\"password\":\"%s\"}%s\n",
-                        e.getKey(), c.port, c.database, c.user, c.password,
-                        (++count < savedConnections.size()) ? "," : "");
-            }
-            pw.println("  },");
-            pw.println("  \"active\": \"" + (activeKey != null ? activeKey : "") + "\"");
-            pw.println("}");
+        JSONObject root = new JSONObject();
+        JSONObject conns = new JSONObject();
+
+        for (Map.Entry<String, ConnectionInfo> e : savedConnections.entrySet()) {
+            ConnectionInfo c = e.getValue();
+            JSONObject info = new JSONObject();
+            info.put("port", c.port);
+            info.put("database", c.database);
+            info.put("user", c.user);
+            info.put("password", c.password);
+            info.put("type", c.type); // true = SQL Anywhere, false = Postgres
+            conns.put(e.getKey(), info);
+        }
+
+        root.put("connections", conns);
+        root.put("active", activeKey != null ? activeKey : "");
+
+        try (FileWriter writer = new FileWriter(file)) {
+            writer.write(root.toJSONString());
         } catch (IOException ex) {
             ex.printStackTrace();
         }
+
     }
 
- private void loadConnections() {
-    if (!file.exists()) return;
+    private void loadConnections() {
+        if (!file.exists()) {
+            return;
+        }
 
-    try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-        StringBuilder sb = new StringBuilder();
-        String line;
-        while ((line = br.readLine()) != null) sb.append(line.trim());
-        String json = sb.toString();
+        JSONParser parser = new JSONParser();
+        try (FileReader reader = new FileReader(file)) {
+            JSONObject root = (JSONObject) parser.parse(reader);
+            JSONObject conns = (JSONObject) root.get("connections");
 
-        int connsStart = json.indexOf("\"connections\"") + 14;
-        int connsEnd = json.indexOf("}", connsStart);
-        if (connsStart < 14 || connsEnd < connsStart) return;
-        String connsJson = json.substring(connsStart, connsEnd + 1);
+            for (Object keyObj : conns.keySet()) {
+                String key = (String) keyObj;
+                JSONObject info = (JSONObject) conns.get(key);
 
-        String[] entries = connsJson.split("\\},\\s*\"");
-        for (String entry : entries) {
-            if (!entry.contains("{")) continue;
-
-            int keyStart = entry.indexOf("\"");
-            int keyEnd = entry.indexOf("\"", keyStart + 1);
-            String key = entry.substring(keyStart + 1, keyEnd);
-
-            int bodyStart = entry.indexOf("{");
-            int bodyEnd = entry.indexOf("}", bodyStart);
-            if (bodyStart < 0 || bodyEnd < 0) continue;
-            String body = entry.substring(bodyStart + 1, bodyEnd);
-
-            Map<String, String> map = new HashMap<>();
-            for (String part : body.split(",")) {
-                String[] kv = part.split(":", 2);
-                if (kv.length < 2) continue;
-                map.put(kv[0].replace("\"", "").trim(), kv[1].replace("\"", "").trim());
+                int port = ((Long) info.get("port")).intValue();
+                String db = (String) info.get("database");
+                String user = (String) info.get("user");
+                String pass = (String) info.get("password");
+                Object typeObj = info.get("type");
+                boolean type = (typeObj != null) ? (Boolean) typeObj : true; //error of null
+                ConnectionInfo ci = new ConnectionInfo(port, db, user, pass);
+                ci.type = type;
+                savedConnections.put(key, ci);
             }
 
-            int port = Integer.parseInt(map.getOrDefault("port", "0"));
-            String db = map.getOrDefault("database", "");
-            String user = map.getOrDefault("user", "");
-            String pass = map.getOrDefault("password", "");
+            String active = (String) root.get("active");
+            activeKey = (active != null && !active.isEmpty()) ? active : null;
 
-            savedConnections.put(key, new ConnectionInfo(port, db, user, pass));
+        } catch (IOException | ParseException e) {
+            e.printStackTrace();
         }
-
-        // Active key
-        int aStart = json.indexOf("\"active\"") + 9;
-        int aEnd = json.indexOf("\"", aStart + 1);
-        if (aStart > 8 && aEnd > aStart) {
-            activeKey = json.substring(aStart, aEnd).trim();
-            if (activeKey.isEmpty()) activeKey = null;
-        }
-
-    } catch (IOException | NumberFormatException e) {
-        e.printStackTrace();
     }
-}
 
 }
