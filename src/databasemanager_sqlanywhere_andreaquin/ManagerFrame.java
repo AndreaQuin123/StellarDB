@@ -18,6 +18,8 @@ import javax.swing.JOptionPane;
 import java.awt.Font;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.regex.Matcher;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JDialog;
@@ -26,6 +28,7 @@ import javax.swing.JPasswordField;
 import javax.swing.JTextField;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreeNode;
 
 //Para poder mostrar tipo Y nombre en los nodos del arbol (para visualizacion)
 class ObjectTree {
@@ -224,7 +227,6 @@ public class ManagerFrame extends javax.swing.JFrame {
                     ps.setString(1, objectName);
                     try (ResultSet rs = ps.executeQuery()) {
                         if (rs.next()) {
-                            sb.append("CREATE PROCEDURE ").append(rs.getString("proc_name")).append(" AS\n");
                             sb.append(rs.getString("proc_defn")).append(";");
                         } else {
                             sb.append("❌ Procedure not found.");
@@ -1171,6 +1173,140 @@ SELECT s.sequence_name, u.user_name AS owner_name
     private void JTreeObjectsValueChanged(javax.swing.event.TreeSelectionEvent evt) {//GEN-FIRST:event_JTreeObjectsValueChanged
     }//GEN-LAST:event_JTreeObjectsValueChanged
 
+    //--------------MIGRATION
+    public void migrate(Connection sqlConn, Connection postgresConn) {
+        String[] migrationOrder = {"TABLE", "SEQUENCE", "INDEX", "TRIGGER", "VIEW"}; //due to errors in order creation
+
+        for (String type : migrationOrder) {
+            migrateObjectsByType(sqlConn, postgresConn, type);
+        }
+
+        JOptionPane.showMessageDialog(this, "Migration finished!");
+    }
+
+    private void migrateObjectsByType(Connection sqlConn, Connection postgresConn, String type) {
+        DefaultMutableTreeNode root = (DefaultMutableTreeNode) JTreeObjects.getModel().getRoot();
+        Enumeration<TreeNode> categories = root.children();
+
+        while (categories.hasMoreElements()) {
+            DefaultMutableTreeNode categoryNode = (DefaultMutableTreeNode) categories.nextElement();
+            Enumeration<TreeNode> objects = categoryNode.children();
+
+            while (objects.hasMoreElements()) {
+                DefaultMutableTreeNode objectNode = (DefaultMutableTreeNode) objects.nextElement();
+                ObjectTree obj = (ObjectTree) objectNode.getUserObject();
+
+                if (obj.type.equalsIgnoreCase(type)) {
+                    try {
+                        switch (type) {
+                            case "TABLE" ->
+                                migrateTable(sqlConn, postgresConn, obj.name);
+                            case "SEQUENCE" ->
+                                migrateSequence(sqlConn, postgresConn, obj.name);
+                            case "TRIGGER" ->
+                                migrateTrigger(sqlConn, postgresConn, obj.name);
+                            case "INDEX" ->
+                                migrateIndex(sqlConn, postgresConn, obj.name);
+                            case "VIEW" ->
+                                migrateView(sqlConn, postgresConn, obj.name);
+                        }
+                        System.out.println(type.toLowerCase() + ": " + obj.name);
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                        System.out.println("ERROR migrating " + type + ": " + obj.name + " - " + ex.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
+    //tomando en cuenta los cambios en el DDL de datos
+    /*
+            Sybase SQL Anywhere	                PostgreSQL
+            1	BIGINT	                        BIGINT
+            4	CHAR(n), CHARACTER(n)C	        CHAR(n), CHARACTER(n)
+            5	DATE	                        DATE
+            6	DATETIME	                TIMESTAMP
+            7	DATETIMEOFFSET 	                TIMESTAMP WITH TIME ZONE
+            10	FLOAT(p)		        DOUBLE PRECISION
+            11	IMAGE	                        BYTEA
+            13	LONG BINARY	                BYTEA
+            14	LONG BIT VARYING	        BYTEA
+            15	LONG NVARCHAR	                TEXT
+            16	LONG VARBIT	                BYTEA
+            17	LONG VARCHAR	                TEXT
+            19	NCHAR(n)	                CHAR(n)
+            20	NTEXT	                        TEXT
+            22	NVARCHAR(n)	                VARCHAR(n)
+            24	SMALLDATETIME	                TIMESTAMP
+            26	SMALLMONEY	                MONEY
+            31	TINYINT                         SMALLINT
+            32	UNSIGNED BIGINT	                NUMERIC(20)
+            33	UNSIGNED INT	                NUMERIC(10)
+            34	UNSIGNED SMALLINT	        NUMERIC(5)
+            35	UNSIGNED TINYINT	        NUMERIC(3)
+            36	VARBINARY(n)	                BYTEA
+
+
+            Sybase SQL Anywhere	               PostgreSQL
+            1	BIT                            BOOLEAN, BOOL
+            3	UNIQUEIDENTIFIER	       CHAR(16)
+            4	UNIQUEIDENTIFIERSTR	       UUID
+
+            link: https://www.sqlines.com/sybase-asa-to-postgresql
+     */
+    private String convertTypes(String sqlAnywhereDDL) {
+
+        if (sqlAnywhereDDL == null || sqlAnywhereDDL.isEmpty()) {
+            return "";
+        }
+
+        String pgDDL = sqlAnywhereDDL;
+        
+        
+        pgDDL = pgDDL.replaceAll("(?i)CREATE TABLE", "CREATE TABLE IF NOT EXISTS"); //error por create table que ya existe
+        pgDDL = pgDDL.replaceAll("(?i)CREATE SEQUENCE", "CREATE SEQUENCE IF NOT EXISTS");
+        pgDDL = pgDDL.replaceAll("(?i)CREATE INDEX", "CREATE INDEX IF NOT EXISTS");
+        pgDDL = pgDDL.replaceAll("(?i)CREATE VIEW", "CREATE OR REPLACE VIEW");
+
+        //views
+        pgDDL = pgDDL.replaceAll("(?i)\"?user\"?\\.", "");
+        pgDDL = pgDDL.replaceAll("\"", "");
+
+        //data types
+        pgDDL = pgDDL.replaceAll("(?i)\\bBIGINT\\b", "BIGINT");
+        pgDDL = pgDDL.replaceAll("(?i)\\bCHAR\\((\\d+)\\)\\b", "CHAR($1)");
+        pgDDL = pgDDL.replaceAll("(?i)\\bCHARACTER\\((\\d+)\\)\\b", "CHAR($1)");
+        pgDDL = pgDDL.replaceAll("(?i)\\bDATE\\b", "DATE");
+        pgDDL = pgDDL.replaceAll("(?i)\\bDATETIMEOFFSET\\b", "TIMESTAMP WITH TIME ZONE");
+        pgDDL = pgDDL.replaceAll("(?i)\\bDATETIME\\b", "TIMESTAMP");
+        pgDDL = pgDDL.replaceAll("(?i)\\bSMALLDATETIME\\b", "TIMESTAMP");
+        pgDDL = pgDDL.replaceAll("(?i)\\bFLOAT\\((\\d+)\\)\\b", "DOUBLE PRECISION");
+        pgDDL = pgDDL.replaceAll("(?i)\\bIMAGE\\b", "BYTEA");
+        pgDDL = pgDDL.replaceAll("(?i)\\bLONG BINARY\\b", "BYTEA");
+        pgDDL = pgDDL.replaceAll("(?i)\\bLONG BIT VARYING\\b", "BYTEA");
+        pgDDL = pgDDL.replaceAll("(?i)\\bVARBINARY\\((\\d+)\\)\\b", "BYTEA");
+        pgDDL = pgDDL.replaceAll("(?i)\\bLONG NVARCHAR\\b", "TEXT");
+        pgDDL = pgDDL.replaceAll("(?i)\\bLONG VARCHAR\\b", "TEXT");
+        pgDDL = pgDDL.replaceAll("(?i)\\bNTEXT\\b", "TEXT");
+        pgDDL = pgDDL.replaceAll("(?i)\\bNVARCHAR\\((\\d+)\\)\\b", "VARCHAR($1)");
+        pgDDL = pgDDL.replaceAll("(?i)\\bNCHAR\\((\\d+)\\)\\b", "CHAR($1)");
+        pgDDL = pgDDL.replaceAll("(?i)\\bSMALLMONEY\\b", "MONEY");
+        pgDDL = pgDDL.replaceAll("(?i)\\bTINYINT\\b", "SMALLINT");
+        pgDDL = pgDDL.replaceAll("(?i)\\bUNSIGNED BIGINT\\b", "NUMERIC(20)");
+        pgDDL = pgDDL.replaceAll("(?i)\\bUNSIGNED INT\\b", "NUMERIC(10)");
+        pgDDL = pgDDL.replaceAll("(?i)\\bUNSIGNED SMALLINT\\b", "NUMERIC(5)");
+        pgDDL = pgDDL.replaceAll("(?i)\\bUNSIGNED TINYINT\\b", "NUMERIC(3)");
+        pgDDL = pgDDL.replaceAll("(?i)\\bBIT\\b", "BOOLEAN");
+        pgDDL = pgDDL.replaceAll("(?i)\\bUNIQUEIDENTIFIER\\b", "CHAR(16)");
+        pgDDL = pgDDL.replaceAll("(?i)\\bUNIQUEIDENTIFIERSTR\\b", "UUID");
+
+        pgDDL = pgDDL.replaceAll("(?i)\\bINTEGER\\s+DEFAULT\\s+AUTOINCREMENT\\b", "SERIAL");
+        pgDDL = pgDDL.replaceAll("(?i)\\bINTEGER\\s+IDENTITY\\b", "SERIAL");
+
+        return pgDDL;
+    }
+
     public void migrateTable(Connection sqlConn, Connection postgresConn, String tableName) {
         try {
             // 1. utiliza el objectddl metodo que ya tenia
@@ -1180,9 +1316,12 @@ SELECT s.sequence_name, u.user_name AS owner_name
                 return;
             }
 
+            //1.1 cambia los tipos de sqlanywhere a tipos compatibles con postgres
+            String pgDDL = convertTypes(ddl);
+
             // 2. crea la tabla si no existe
             try (Statement destStmt = postgresConn.createStatement()) {
-                destStmt.execute(ddl);
+                destStmt.execute(pgDDL);
                 System.out.println("tabla creada: " + tableName);
             } catch (SQLException e) {
                 System.out.println(e.getMessage());
@@ -1215,14 +1354,78 @@ SELECT s.sequence_name, u.user_name AS owner_name
                         destInsert.executeUpdate();
                         rowCount++;
                     }
-
-                    JOptionPane.showMessageDialog(this, "Migrated " + rowCount + " rows from table: " + tableName);
                 }
             }
 
         } catch (SQLException ex) {
             ex.printStackTrace();
             JOptionPane.showMessageDialog(this, "Error migrating table: " + ex.getMessage());
+        }
+    }
+
+    public void migrateView(Connection sqlConn, Connection postgresConn, String viewName) {
+        try {
+            String ddl = getObjectDDL(sqlConn, viewName, "VIEW");
+            if (ddl.startsWith("❌")) {
+                JOptionPane.showMessageDialog(this, "View not found: " + viewName);
+                return;
+            }
+            String pgDDL = convertTypes(ddl);
+            try (Statement stmt = postgresConn.createStatement()) {
+                stmt.execute(pgDDL);
+                System.out.println("View created: " + viewName);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error migrating view: " + e.getMessage());
+        }
+    }
+
+    public void migrateSequence(Connection sqlConn, Connection postgresConn, String sequenceName) {
+        try {
+            String ddl = getObjectDDL(sqlConn, sequenceName, "SEQUENCE");
+            if (ddl.startsWith("❌")) {
+                return;
+            }
+            String pgDDL = convertTypes(ddl);
+            try (Statement stmt = postgresConn.createStatement()) {
+                stmt.execute(pgDDL);
+                System.out.println("Sequence created: " + sequenceName);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void migrateTrigger(Connection sqlConn, Connection postgresConn, String triggerName) {
+        try {
+            String ddl = getObjectDDL(sqlConn, triggerName, "TRIGGER");
+            if (ddl.startsWith("❌")) {
+                return;
+            }
+            String pgDDL = convertTypes(ddl);
+            try (Statement stmt = postgresConn.createStatement()) {
+                stmt.execute(pgDDL);
+                System.out.println("Trigger created: " + triggerName);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void migrateIndex(Connection sqlConn, Connection postgresConn, String indexName) {
+        try {
+            String ddl = getObjectDDL(sqlConn, indexName, "INDEX");
+            if (ddl.startsWith("❌")) {
+                return;
+            }
+            String pgDDL = convertTypes(ddl);
+            try (Statement stmt = postgresConn.createStatement()) {
+                stmt.execute(pgDDL);
+                System.out.println("Index created: " + indexName);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
         }
     }
 
@@ -1275,7 +1478,7 @@ SELECT s.sequence_name, u.user_name AS owner_name
                         return;
                     }
 
-                    migrateTable(sqlanywhereConn, postgresConn, "clientes");
+                    migrate(sqlanywhereConn, postgresConn);
 
                     JOptionPane.showMessageDialog(this, "Synchronization completed successfully.");
 
