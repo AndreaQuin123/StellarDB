@@ -5,6 +5,7 @@
 package databasemanager_sqlanywhere_andreaquin;
 
 //Librerias de conexion
+import java.awt.BorderLayout;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.sql.ResultSet;
@@ -19,10 +20,10 @@ import java.awt.Font;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Enumeration;
-import java.util.regex.Matcher;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JDialog;
+import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextField;
@@ -855,6 +856,7 @@ SELECT s.sequence_name, u.user_name AS owner_name
         SincronizacionButton = new javax.swing.JButton();
         DisconnectButton = new javax.swing.JButton();
         ChangeConnectionButton = new javax.swing.JButton();
+        DiagramButton = new javax.swing.JButton();
         ConnectionLabel1 = new javax.swing.JLabel();
         ConnectionLabel = new javax.swing.JLabel();
         DBNameLabel = new javax.swing.JLabel();
@@ -953,7 +955,7 @@ SELECT s.sequence_name, u.user_name AS owner_name
             }
         });
         jPanel1.add(SincronizacionButton);
-        SincronizacionButton.setBounds(690, 550, 110, 80);
+        SincronizacionButton.setBounds(690, 550, 110, 90);
 
         DisconnectButton.setAutoscrolls(true);
         DisconnectButton.setBorderPainted(false);
@@ -977,6 +979,15 @@ SELECT s.sequence_name, u.user_name AS owner_name
         });
         jPanel1.add(ChangeConnectionButton);
         ChangeConnectionButton.setBounds(810, 440, 130, 100);
+
+        DiagramButton.setText("DIAGRAM");
+        DiagramButton.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                DiagramButtonMouseClicked(evt);
+            }
+        });
+        jPanel1.add(DiagramButton);
+        DiagramButton.setBounds(1010, 620, 120, 40);
 
         ConnectionLabel1.setBackground(new java.awt.Color(255, 255, 255));
         ConnectionLabel1.setForeground(new java.awt.Color(0, 0, 0));
@@ -1431,8 +1442,6 @@ SELECT s.sequence_name, u.user_name AS owner_name
 
 
     private void SincronizacionButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_SincronizacionButtonActionPerformed
-        //TO-DO
-        //SINCRONIZACION
 
         String[] options = {"Use existing connection", "Add new connection"};
         int choice = JOptionPane.showOptionDialog(this,
@@ -1605,6 +1614,26 @@ SELECT s.sequence_name, u.user_name AS owner_name
         create.setVisible(true);
     }//GEN-LAST:event_CreateObjectButtonMouseClicked
 
+    private void DiagramButtonMouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_DiagramButtonMouseClicked
+        Connection conn = connectionManager.getActiveConnection();
+
+        if (conn == null) {
+            JOptionPane.showMessageDialog(this, "ERROR: No active connection!");
+            return;
+        }
+
+        JFrame diagramWindow = new JFrame("Database Diagram");
+        diagramWindow.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        diagramWindow.setSize(800, 600);
+        diagramWindow.setLocationRelativeTo(this);
+
+        DiagramFrame diagram = new DiagramFrame(conn);
+        diagramWindow.add(diagram, BorderLayout.CENTER);
+
+        diagramWindow.setVisible(true);
+
+    }//GEN-LAST:event_DiagramButtonMouseClicked
+
     /**
      * @param args the command line arguments
      */
@@ -1617,6 +1646,7 @@ SELECT s.sequence_name, u.user_name AS owner_name
     private javax.swing.JButton CreateObjectButton;
     private javax.swing.JLabel CurrentUserLabel;
     private javax.swing.JLabel DBNameLabel;
+    private javax.swing.JButton DiagramButton;
     private javax.swing.JButton DisconnectButton;
     private javax.swing.JTree JTreeObjects;
     private javax.swing.JTextArea ObjectDetails;
